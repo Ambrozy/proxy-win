@@ -3,13 +3,13 @@ using Microsoft.Win32;
 
 internal sealed class InstalledAppPicker : Form
 {
-    private readonly TextBox search = new() { Dock = DockStyle.Top, PlaceholderText = "Название программы или имя EXE" };
-    private readonly ListBox results = new() { Dock = DockStyle.Fill, DisplayMember = nameof(InstalledApp.Name) };
+    private readonly TextBox search = new() { Dock = DockStyle.Top, PlaceholderText = "Поиск по названию или имени EXE" };
+    private readonly ListBox results = new() { Dock = DockStyle.Fill, DisplayMember = nameof(InstalledApp.Name), SelectionMode = SelectionMode.MultiExtended };
     private readonly Label details = new() { Dock = DockStyle.Top, Height = 54, AutoEllipsis = true, Text = "Загрузка списка…" };
-    private readonly Button choose = new() { Text = "Выбрать", AutoSize = true, Enabled = false };
+    private readonly Button choose = new() { Text = "Добавить", AutoSize = true, Enabled = false };
     private InstalledApp[] apps = [];
 
-    public string? SelectedPath { get; private set; }
+    public string[] SelectedPaths { get; private set; } = [];
 
     public InstalledAppPicker()
     {
@@ -23,6 +23,7 @@ internal sealed class InstalledAppPicker : Form
         Controls.Add(results);
         Controls.Add(details);
         Controls.Add(search);
+        Controls.Add(new Label { Dock = DockStyle.Top, Height = 24, Text = "Ctrl или Shift для выбора нескольких программ" });
         Controls.Add(buttons);
         AcceptButton = choose;
         CancelButton = cancel;
@@ -59,15 +60,16 @@ internal sealed class InstalledAppPicker : Form
     private void UpdateSelection()
     {
         var app = results.SelectedItem as InstalledApp;
-        choose.Enabled = app is not null;
-        details.Text = app?.Path ?? "Программы не найдены. Измените запрос или выберите файл вручную.";
+        int count = results.SelectedItems.Count;
+        choose.Enabled = count > 0;
+        details.Text = count > 1 ? $"Выбрано программ: {count}" : app?.Path ?? "Программы не найдены. Измените запрос или выберите файл вручную.";
     }
 
     private void Choose()
     {
-        if (results.SelectedItem is not InstalledApp app)
+        if (results.SelectedItems.Count == 0)
             return;
-        SelectedPath = app.Path;
+        SelectedPaths = results.SelectedItems.Cast<InstalledApp>().Select(app => app.Path).ToArray();
         DialogResult = DialogResult.OK;
     }
 }

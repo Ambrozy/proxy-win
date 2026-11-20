@@ -7,7 +7,7 @@ internal static class ProxyConfig
         "(?i)^" + string.Concat(path.Select(c =>
             @"\.+*?()|[]{}^$".Contains(c) ? "\\" + c : c.ToString())) + "$";
 
-    public static string Create(string app, string host, int port, bool https,
+    public static string Create(IEnumerable<string> apps, string host, int port, bool https,
         string username, string password, bool ipv4Dns = false)
     {
         var upstream = new Dictionary<string, object>
@@ -25,11 +25,11 @@ internal static class ProxyConfig
         else
             upstream["version"] = "5";
 
-        var path = new[] { ExactWindowsPath(app) };
+        var paths = apps.Select(ExactWindowsPath).ToArray();
         var rules = new List<object>();
         if (https)
-            rules.Add(new { process_path_regex = path, network = "udp", action = "reject" });
-        rules.Add(new { process_path_regex = path, network = new[] { "tcp", "udp" }, outbound = "proxy" });
+            rules.Add(new { process_path_regex = paths, network = "udp", action = "reject" });
+        rules.Add(new { process_path_regex = paths, network = new[] { "tcp", "udp" }, outbound = "proxy" });
 
         var dnsRules = new List<object>();
         if (ipv4Dns)

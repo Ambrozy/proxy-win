@@ -22,7 +22,8 @@ internal static class Program
 
 internal sealed class ProxyWindow : Form
 {
-    private readonly TextBox application = new() { Dock = DockStyle.Fill, ReadOnly = true };
+    private readonly ListBox applications = new() { Dock = DockStyle.Fill, Height = 88,
+        HorizontalScrollbar = true, SelectionMode = SelectionMode.MultiExtended };
     private readonly TextBox host = new() { Dock = DockStyle.Fill, PlaceholderText = "proxy.example.com" };
     private readonly NumericUpDown port = new() { Minimum = 1, Maximum = 65535, Value = 1080, Width = 100 };
     private readonly ComboBox protocol = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 160 };
@@ -31,7 +32,8 @@ internal sealed class ProxyWindow : Form
     private readonly TextBox username = new() { Dock = DockStyle.Fill };
     private readonly TextBox password = new() { Dock = DockStyle.Fill, UseSystemPasswordChar = true };
     private readonly Button installed = new() { Text = "Из списка…", AutoSize = true };
-    private readonly Button browse = new() { Text = "Файл…", AutoSize = true };
+    private readonly Button browse = new() { Text = "Файлы…", AutoSize = true };
+    private readonly Button remove = new() { Text = "Удалить", AutoSize = true, Enabled = false };
     private readonly CheckBox ipv4Dns = new() { Text = "Только IPv4 в DNS через AppProxy", AutoSize = true };
     private readonly Button start = new() { Text = "Включить", AutoSize = true };
     private readonly Button stop = new() { Text = "Остановить", AutoSize = true, Enabled = false };
@@ -45,8 +47,8 @@ internal sealed class ProxyWindow : Form
     {
         Text = "AppProxy";
         StartPosition = FormStartPosition.CenterScreen;
-        ClientSize = new Size(720, 490);
-        MinimumSize = new Size(580, 420);
+        ClientSize = new Size(800, 550);
+        MinimumSize = new Size(670, 480);
         Font = new Font("Segoe UI", 10);
         protocol.Items.AddRange(new object[] { "SOCKS5", "HTTPS CONNECT" });
         protocol.SelectedIndex = 0;
@@ -56,12 +58,13 @@ internal sealed class ProxyWindow : Form
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        for (int row = 0; row < 9; row++)
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 94));
+        for (int row = 1; row < 9; row++)
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        AddRow(layout, 0, "Приложение", application);
-        var pickers = new FlowLayoutPanel { AutoSize = true, WrapContents = false };
-        pickers.Controls.AddRange(new Control[] { installed, browse });
+        AddRow(layout, 0, "Приложения", applications);
+        var pickers = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false };
+        pickers.Controls.AddRange(new Control[] { installed, browse, remove });
         layout.Controls.Add(pickers, 2, 0);
         AddRow(layout, 1, "Ссылка SOCKS5", proxyUri);
         layout.Controls.Add(importProxy, 2, 1);
@@ -83,14 +86,21 @@ internal sealed class ProxyWindow : Form
         installed.Click += (_, _) =>
         {
             using var picker = new InstalledAppPicker();
-            if (picker.ShowDialog(this) == DialogResult.OK && picker.SelectedPath is { } path)
-                application.Text = path;
+            if (picker.ShowDialog(this) == DialogResult.OK)
+                AddApplications(picker.SelectedPaths);
         };
         browse.Click += (_, _) =>
         {
-            using var picker = new OpenFileDialog { Filter = "Приложения Windows (*.exe)|*.exe", CheckFileExists = true };
+            using var picker = new OpenFileDialog { Filter = "Приложения Windows (*.exe)|*.exe", CheckFileExists = true, Multiselect = true };
             if (picker.ShowDialog(this) == DialogResult.OK)
-                application.Text = picker.FileName;
+                AddApplications(picker.FileNames);
+        };
+        applications.SelectedIndexChanged += (_, _) => UpdateRemoveButton();
+        remove.Click += (_, _) =>
+        {
+            foreach (var app in applications.SelectedItems.Cast<string>().ToArray())
+                applications.Items.Remove(app);
+            UpdateRemoveButton();
         };
         importProxy.Click += (_, _) => ApplyProxyUri();
         proxyUri.KeyDown += (_, e) =>
@@ -107,6 +117,19 @@ internal sealed class ProxyWindow : Form
         FormClosing += (_, e) => e.Cancel = !TryStop();
         FormClosed += (_, _) => timer.Dispose();
     }
+
+    private void AddApplications(IEnumerable<string> paths)
+    {
+        var existing = applications.Items.Cast<string>().ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var path in paths)
+        {
+            if (existing.Add(path))
+                applications.Items.Add(path);
+        }
+    }
+
+    private void UpdateRemoveButton() =>
+        remove.Enabled = applications.Enabled && applications.SelectedItems.Count > 0;
 
     private static void AddRow(TableLayoutPanel layout, int row, string name, Control control)
     {
@@ -142,10 +165,15 @@ internal sealed class ProxyWindow : Form
         var server = host.Text.Trim();
         if (server.StartsWith('[') && server.EndsWith(']'))
             server = server[1..^1];
-        if (!File.Exists(application.Text) ||
-            (!IPAddress.TryParse(server, out _) && Uri.CheckHostName(server) != UriHostNameType.Dns))
+        var paths = applications.Items.Cast<string>().ToArray();
+        if (paths.Length == 0 || paths.Any(path => !File.Exists(path)))
         {
-            MessageBox.Show(this, "Выберите существующий EXE и укажите имя или IP-адрес прокси.", Text);
+            MessageBox.Show(this, "Добавьте хотя бы один EXE. Если файл перемещён или удалён, обновите список.", Text);
+            return;
+        }
+        if (!IPAddress.TryParse(server, out _) && Uri.CheckHostName(server) != UriHostNameType.Dns)
+        {
+            MessageBox.Show(this, "Укажите имя или IP-адрес прокси.", Text);
             return;
         }
         if (username.Text.Length == 0 && password.Text.Length != 0)
@@ -158,7 +186,7 @@ internal sealed class ProxyWindow : Form
         messages.Clear();
         try
         {
-            var config = ProxyConfig.Create(application.Text, server, (int)port.Value, protocol.SelectedIndex == 1,
+            var config = ProxyConfig.Create(paths, server, (int)port.Value, protocol.SelectedIndex == 1,
                 username.Text, password.Text, ipv4Dns.Checked);
             string enginePath = Path.Combine(AppContext.BaseDirectory, "engine", "sing-box.exe");
             var worker = new Process
@@ -289,8 +317,9 @@ internal sealed class ProxyWindow : Form
     {
         start.Enabled = !active;
         stop.Enabled = active;
-        foreach (var field in new Control[] { installed, browse, proxyUri, importProxy, protocol, host, port, username, password, ipv4Dns })
+        foreach (var field in new Control[] { applications, installed, browse, proxyUri, importProxy, protocol, host, port, username, password, ipv4Dns })
             field.Enabled = !active;
+        UpdateRemoveButton();
         status.Text = message;
     }
 }
