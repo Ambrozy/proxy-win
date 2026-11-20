@@ -4,3 +4,5 @@ obj/
 engine/
 publish/
 *.user
+
+AppProxy.settings.json*

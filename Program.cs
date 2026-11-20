@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text.Json;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Net;
@@ -114,8 +116,59 @@ internal sealed class ProxyWindow : Form
         stop.Click += (_, _) => TryStop();
         timer.Tick += (_, _) => RefreshEngine();
         timer.Start();
-        FormClosing += (_, e) => e.Cancel = !TryStop();
+        Shown += (_, _) => LoadSettings();
+        FormClosing += (_, e) =>
+        {
+            e.Cancel = !TryStop();
+            if (!e.Cancel)
+                SaveSettings();
+        };
         FormClosed += (_, _) => timer.Dispose();
+    }
+
+    private void LoadSettings()
+    {
+        try
+        {
+            if (AppSettings.Read() is not { } settings)
+                return;
+
+            AddApplications((settings.Applications ?? []).Where(path => !string.IsNullOrWhiteSpace(path)));
+            protocol.SelectedIndex = settings.Https ? 1 : 0;
+            host.Text = settings.Host;
+            if (settings.Port is >= 1 and <= 65535)
+                port.Value = settings.Port;
+            username.Text = settings.Username;
+            ipv4Dns.Checked = settings.Ipv4Dns;
+            password.Text = AppSettings.Unprotect(settings.EncryptedPassword);
+            proxyUri.Text = AppSettings.Unprotect(settings.EncryptedPendingUri);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or FormatException or CryptographicException)
+        {
+            MessageBox.Show(this, "Не удалось прочитать часть настроек из AppProxy.settings.json. Проверьте файл и при необходимости введите пароль заново.", Text);
+        }
+    }
+
+    private void SaveSettings()
+    {
+        try
+        {
+            new AppSettings
+            {
+                Applications = applications.Items.Cast<string>().ToArray(),
+                Https = protocol.SelectedIndex == 1,
+                Host = host.Text,
+                Port = (int)port.Value,
+                Username = username.Text,
+                Ipv4Dns = ipv4Dns.Checked,
+                EncryptedPassword = AppSettings.Protect(password.Text),
+                EncryptedPendingUri = AppSettings.Protect(proxyUri.Text)
+            }.Write();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CryptographicException)
+        {
+            MessageBox.Show(this, "Не удалось сохранить AppProxy.settings.json рядом с программой. Проверьте права записи в папку.", Text);
+        }
     }
 
     private void AddApplications(IEnumerable<string> paths)
@@ -222,6 +275,7 @@ internal sealed class ProxyWindow : Form
             worker.StandardInput.Write(config);
             worker.StandardInput.Close();
             SetActive(true, "Запуск…");
+            SaveSettings();
         }
         catch (Exception ex)
         {
