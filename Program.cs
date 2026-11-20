@@ -32,6 +32,7 @@ internal sealed class ProxyWindow : Form
     private readonly TextBox password = new() { Dock = DockStyle.Fill, UseSystemPasswordChar = true };
     private readonly Button installed = new() { Text = "Из списка…", AutoSize = true };
     private readonly Button browse = new() { Text = "Файл…", AutoSize = true };
+    private readonly CheckBox ipv4Dns = new() { Text = "Только IPv4 в DNS через AppProxy", AutoSize = true };
     private readonly Button start = new() { Text = "Включить", AutoSize = true };
     private readonly Button stop = new() { Text = "Остановить", AutoSize = true, Enabled = false };
     private readonly Label status = new() { Text = "Выключено", AutoSize = true, Margin = new Padding(12, 8, 0, 0) };
@@ -51,11 +52,11 @@ internal sealed class ProxyWindow : Form
         protocol.SelectedIndex = 0;
         protocol.SelectedIndexChanged += (_, _) => port.Value = protocol.SelectedIndex == 0 ? 1080 : 443;
 
-        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(18), ColumnCount = 3, RowCount = 9 };
+        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(18), ColumnCount = 3, RowCount = 10 };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        for (int row = 0; row < 8; row++)
+        for (int row = 0; row < 9; row++)
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         AddRow(layout, 0, "Приложение", application);
@@ -69,11 +70,13 @@ internal sealed class ProxyWindow : Form
         AddRow(layout, 4, "Порт", port);
         AddRow(layout, 5, "Логин", username);
         AddRow(layout, 6, "Пароль", password);
+        layout.Controls.Add(ipv4Dns, 1, 7);
+        layout.SetColumnSpan(ipv4Dns, 2);
         var actions = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, WrapContents = false };
         actions.Controls.AddRange(new Control[] { start, stop, status });
-        layout.Controls.Add(actions, 0, 7);
+        layout.Controls.Add(actions, 0, 8);
         layout.SetColumnSpan(actions, 3);
-        layout.Controls.Add(log, 0, 8);
+        layout.Controls.Add(log, 0, 9);
         layout.SetColumnSpan(log, 3);
         Controls.Add(layout);
 
@@ -156,7 +159,7 @@ internal sealed class ProxyWindow : Form
         try
         {
             var config = ProxyConfig.Create(application.Text, server, (int)port.Value, protocol.SelectedIndex == 1,
-                username.Text, password.Text);
+                username.Text, password.Text, ipv4Dns.Checked);
             string enginePath = Path.Combine(AppContext.BaseDirectory, "engine", "sing-box.exe");
             var worker = new Process
             {
@@ -286,7 +289,7 @@ internal sealed class ProxyWindow : Form
     {
         start.Enabled = !active;
         stop.Enabled = active;
-        foreach (var field in new Control[] { installed, browse, proxyUri, importProxy, protocol, host, port, username, password })
+        foreach (var field in new Control[] { installed, browse, proxyUri, importProxy, protocol, host, port, username, password, ipv4Dns })
             field.Enabled = !active;
         status.Text = message;
     }

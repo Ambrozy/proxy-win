@@ -8,7 +8,7 @@ internal static class ProxyConfig
             @"\.+*?()|[]{}^$".Contains(c) ? "\\" + c : c.ToString())) + "$";
 
     public static string Create(string app, string host, int port, bool https,
-        string username, string password)
+        string username, string password, bool ipv4Dns = false)
     {
         var upstream = new Dictionary<string, object>
         {
@@ -31,10 +31,14 @@ internal static class ProxyConfig
             rules.Add(new { process_path_regex = path, network = "udp", action = "reject" });
         rules.Add(new { process_path_regex = path, network = new[] { "tcp", "udp" }, outbound = "proxy" });
 
+        var dnsRules = new List<object>();
+        if (ipv4Dns)
+            dnsRules.Add(new { query_type = new[] { "AAAA" }, action = "predefined", rcode = "NOERROR" });
+
         return JsonSerializer.Serialize(new
         {
             log = new { level = "info", disabled = false },
-            dns = new { servers = new[] { new { type = "local", tag = "system" } } },
+            dns = new { servers = new[] { new { type = "local", tag = "system" } }, rules = dnsRules },
             inbounds = new[]
             {
                 new { type = "tun", tag = "tun", address = new[] { "172.19.0.1/30", "fdfe:dcba:9876::1/126" },
