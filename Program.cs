@@ -26,6 +26,8 @@ internal sealed class ProxyWindow : Form
     private readonly TextBox host = new() { Dock = DockStyle.Fill, PlaceholderText = "proxy.example.com" };
     private readonly NumericUpDown port = new() { Minimum = 1, Maximum = 65535, Value = 1080, Width = 100 };
     private readonly ComboBox protocol = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 160 };
+    private readonly TextBox proxyUri = new() { Dock = DockStyle.Fill, UseSystemPasswordChar = true };
+    private readonly Button importProxy = new() { Text = "Применить", AutoSize = true };
     private readonly TextBox username = new() { Dock = DockStyle.Fill };
     private readonly TextBox password = new() { Dock = DockStyle.Fill, UseSystemPasswordChar = true };
     private readonly Button installed = new() { Text = "Из списка…", AutoSize = true };
@@ -49,27 +51,29 @@ internal sealed class ProxyWindow : Form
         protocol.SelectedIndex = 0;
         protocol.SelectedIndexChanged += (_, _) => port.Value = protocol.SelectedIndex == 0 ? 1080 : 443;
 
-        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(18), ColumnCount = 3, RowCount = 8 };
+        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(18), ColumnCount = 3, RowCount = 9 };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        for (int row = 0; row < 7; row++)
+        for (int row = 0; row < 8; row++)
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         AddRow(layout, 0, "Приложение", application);
         var pickers = new FlowLayoutPanel { AutoSize = true, WrapContents = false };
         pickers.Controls.AddRange(new Control[] { installed, browse });
         layout.Controls.Add(pickers, 2, 0);
-        AddRow(layout, 1, "Протокол", protocol);
-        AddRow(layout, 2, "Сервер", host);
-        AddRow(layout, 3, "Порт", port);
-        AddRow(layout, 4, "Логин", username);
-        AddRow(layout, 5, "Пароль", password);
+        AddRow(layout, 1, "Ссылка SOCKS5", proxyUri);
+        layout.Controls.Add(importProxy, 2, 1);
+        AddRow(layout, 2, "Протокол", protocol);
+        AddRow(layout, 3, "Сервер", host);
+        AddRow(layout, 4, "Порт", port);
+        AddRow(layout, 5, "Логин", username);
+        AddRow(layout, 6, "Пароль", password);
         var actions = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, WrapContents = false };
         actions.Controls.AddRange(new Control[] { start, stop, status });
-        layout.Controls.Add(actions, 0, 6);
+        layout.Controls.Add(actions, 0, 7);
         layout.SetColumnSpan(actions, 3);
-        layout.Controls.Add(log, 0, 7);
+        layout.Controls.Add(log, 0, 8);
         layout.SetColumnSpan(log, 3);
         Controls.Add(layout);
 
@@ -85,6 +89,14 @@ internal sealed class ProxyWindow : Form
             if (picker.ShowDialog(this) == DialogResult.OK)
                 application.Text = picker.FileName;
         };
+        importProxy.Click += (_, _) => ApplyProxyUri();
+        proxyUri.KeyDown += (_, e) =>
+        {
+            if (e.KeyCode != Keys.Enter)
+                return;
+            e.SuppressKeyPress = true;
+            ApplyProxyUri();
+        };
         start.Click += (_, _) => StartProxy();
         stop.Click += (_, _) => TryStop();
         timer.Tick += (_, _) => RefreshEngine();
@@ -99,9 +111,29 @@ internal sealed class ProxyWindow : Form
         layout.Controls.Add(control, 1, row);
     }
 
+    private bool ApplyProxyUri()
+    {
+        if (SocksProxyUri.Parse(proxyUri.Text) is not { } settings)
+        {
+            MessageBox.Show(this, "Укажите ссылку вида socks5://логин:пароль@сервер:порт.", Text);
+            return false;
+        }
+
+        protocol.SelectedIndex = 0;
+        host.Text = settings.Host;
+        port.Value = settings.Port;
+        username.Text = settings.Username;
+        password.Text = settings.Password;
+        proxyUri.Clear();
+        return true;
+    }
+
     private void StartProxy()
     {
         if (engine is not null)
+            return;
+
+        if (!string.IsNullOrWhiteSpace(proxyUri.Text) && !ApplyProxyUri())
             return;
 
         var server = host.Text.Trim();
@@ -254,7 +286,7 @@ internal sealed class ProxyWindow : Form
     {
         start.Enabled = !active;
         stop.Enabled = active;
-        foreach (var field in new Control[] { installed, browse, protocol, host, port, username, password })
+        foreach (var field in new Control[] { installed, browse, proxyUri, importProxy, protocol, host, port, username, password })
             field.Enabled = !active;
         status.Text = message;
     }
