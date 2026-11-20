@@ -28,7 +28,8 @@ internal sealed class ProxyWindow : Form
     private readonly ComboBox protocol = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 160 };
     private readonly TextBox username = new() { Dock = DockStyle.Fill };
     private readonly TextBox password = new() { Dock = DockStyle.Fill, UseSystemPasswordChar = true };
-    private readonly Button browse = new() { Text = "Выбрать…", AutoSize = true };
+    private readonly Button installed = new() { Text = "Из списка…", AutoSize = true };
+    private readonly Button browse = new() { Text = "Файл…", AutoSize = true };
     private readonly Button start = new() { Text = "Включить", AutoSize = true };
     private readonly Button stop = new() { Text = "Остановить", AutoSize = true, Enabled = false };
     private readonly Label status = new() { Text = "Выключено", AutoSize = true, Margin = new Padding(12, 8, 0, 0) };
@@ -56,7 +57,9 @@ internal sealed class ProxyWindow : Form
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         AddRow(layout, 0, "Приложение", application);
-        layout.Controls.Add(browse, 2, 0);
+        var pickers = new FlowLayoutPanel { AutoSize = true, WrapContents = false };
+        pickers.Controls.AddRange(new Control[] { installed, browse });
+        layout.Controls.Add(pickers, 2, 0);
         AddRow(layout, 1, "Протокол", protocol);
         AddRow(layout, 2, "Сервер", host);
         AddRow(layout, 3, "Порт", port);
@@ -70,6 +73,12 @@ internal sealed class ProxyWindow : Form
         layout.SetColumnSpan(log, 3);
         Controls.Add(layout);
 
+        installed.Click += (_, _) =>
+        {
+            using var picker = new InstalledAppPicker();
+            if (picker.ShowDialog(this) == DialogResult.OK && picker.SelectedPath is { } path)
+                application.Text = path;
+        };
         browse.Click += (_, _) =>
         {
             using var picker = new OpenFileDialog { Filter = "Приложения Windows (*.exe)|*.exe", CheckFileExists = true };
@@ -245,7 +254,7 @@ internal sealed class ProxyWindow : Form
     {
         start.Enabled = !active;
         stop.Enabled = active;
-        foreach (var field in new Control[] { browse, protocol, host, port, username, password })
+        foreach (var field in new Control[] { installed, browse, protocol, host, port, username, password })
             field.Enabled = !active;
         status.Text = message;
     }
